@@ -1,0 +1,198 @@
+import os
+import re
+import pandas as pd
+from pathlib import Path
+
+
+# ============================================================
+# USER SETTINGS
+# ============================================================
+
+# Folder where all 54 CSV files are stored
+INPUT_FOLDER = r"C:\Users\siddh\OneDrive - Galaxeye Space\downloads\GE_S_BAND_OMNI_W_STR\GE_S_BAND_OMNI_W_STR"
+
+# Output Excel file
+OUTPUT_EXCEL = r"C:\PYTHON\RF comms\GE_S_BAND_OMNI_W_STR\GE_S_Band_OMNI_Parameters_Output.xlsx"
+
+# Optional: if all files came from one ZIP, write the ZIP path here
+# Otherwise keep it blank: ""
+ZIP_LINK = r""
+
+
+# ============================================================
+# PARAMETERS TO EXTRACT
+# ============================================================
+
+PARAMETERS_TO_EXTRACT = [
+    "Frequency",
+    "Freq Units",
+    "Remarks",
+    "Type",
+    "Model No",
+    "Polarization",
+    "Plane",
+    "FileName",
+    "Date",
+    "Angle",
+    "Min Y",
+    "Max Y",
+    "Polar ChartDegrees",
+    "Rectangular ChartDegrees"
+]
+
+
+# ============================================================
+# FUNCTION TO READ FILE SAFELY
+# ============================================================
+
+def read_text_file(file_path):
+    """
+    Reads a CSV/text file using multiple encodings.
+    This avoids errors if some files are saved with different encoding formats.
+    """
+
+    encodings_to_try = ["utf-8", "utf-8-sig", "latin1", "cp1252"]
+
+    for encoding in encodings_to_try:
+        try:
+            with open(file_path, "r", encoding=encoding) as file:
+                return file.readlines()
+        except UnicodeDecodeError:
+            continue
+
+    raise UnicodeDecodeError(
+        "Unable to decode file",
+        str(file_path),
+        0,
+        1,
+        "Tried utf-8, utf-8-sig, latin1, and cp1252"
+    )
+
+
+# ============================================================
+# FUNCTION TO EXTRACT [PARAMETERS] SECTION
+# ============================================================
+
+def extract_parameters_from_csv(file_path):
+    """
+    Extracts only the [PARAMETERS] block from one CSV file.
+    It searches for lines like:
+        Frequency=2.240000
+        Freq Units=GHz
+    """
+
+    lines = read_text_file(file_path)
+
+    extracted_data = {key: "" for key in PARAMETERS_TO_EXTRACT}
+
+    inside_parameters = False
+
+    for line in lines:
+        clean_line = line.strip()
+
+        if clean_line == "":
+            continue
+
+        # Detect start of [PARAMETERS] block
+        if clean_line.upper() == "[PARAMETERS]":
+            inside_parameters = True
+            continue
+
+        # Stop if another section starts, for example [DATA]
+        if inside_parameters and clean_line.startswith("[") and clean_line.endswith("]"):
+            break
+
+        if inside_parameters:
+            # Only process lines with key=value format
+            if "=" in clean_line:
+                key, value = clean_line.split("=", 1)
+
+                key = key.strip()
+                value = value.strip()
+
+                if key in extracted_data:
+                    extracted_data[key] = value
+
+            # Stop if numerical antenna data starts
+            # Example: 350.050,-17.091
+            elif re.match(r"^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?", clean_line):
+                break
+
+    return extracted_data
+
+
+# ============================================================
+# MAIN SCRIPT
+# ============================================================
+
+def main():
+    input_folder = Path(INPUT_FOLDER)
+
+    if not input_folder.exists():
+        raise FileNotFoundError(f"Input folder not found: {INPUT_FOLDER}")
+
+    csv_files = sorted(input_folder.glob("*.csv"))
+
+    if len(csv_files) == 0:
+        raise FileNotFoundError("No CSV files found in the input folder.")
+
+    all_rows = []
+
+    for csv_file in csv_files:
+        params = extract_parameters_from_csv(csv_file)
+
+        row = {
+            "File taken from": csv_file.name,
+            "File path / zip link": ZIP_LINK if ZIP_LINK else str(csv_file)
+        }
+
+        row.update(params)
+
+        all_rows.append(row)
+
+    df = pd.DataFrame(all_rows)
+
+    # Arrange final column order
+    final_columns = ["File taken from", "File path / zip link"] + PARAMETERS_TO_EXTRACT
+    df = df[final_columns]
+
+    # Save to Excel
+    with pd.ExcelWriter(OUTPUT_EXCEL, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Extracted Parameters")
+
+        workbook = writer.book
+        worksheet = writer.sheets["Extracted Parameters"]
+
+        # Freeze top row
+        worksheet.freeze_panes = "A2"
+
+        # Auto-adjust column widths
+        for column_cells in worksheet.columns:
+            max_length = 0
+            column_letter = column_cells[0].column_letter
+
+            for cell in column_cells:
+                if cell.value is not None:
+                    max_length = max(max_length, len(str(cell.value)))
+
+            adjusted_width = min(max_length + 3, 45)
+            worksheet.column_dimensions[column_letter].width = adjusted_width
+
+        # Add hyperlinks to local file paths
+        file_path_column = 2
+
+        for row_number in range(2, len(df) + 2):
+            cell = worksheet.cell(row=row_number, column=file_path_column)
+            path_value = cell.value
+
+            if path_value and os.path.exists(path_value):
+                cell.hyperlink = path_value
+                cell.style = "Hyperlink"
+
+    print("Extraction completed successfully.")
+    print(f"Total CSV files processed: {len(csv_files)}")
+    print(f"Excel saved at: {OUTPUT_EXCEL}")
+
+
+if __name__ == "__main__":
+    main()
