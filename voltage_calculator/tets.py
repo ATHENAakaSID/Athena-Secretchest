@@ -413,9 +413,8 @@ def get_text_input(prompt):
 
 # Main
 if __name__ == "__main__":
-
     capacity_excel_path = "EPS_Capacity_Test_Processed_1.2V.xlsx"
-    lighting_csv_path = "Lighting.csv"
+    lighting_csv_path = "Lighting.csv   "
 
     print("\n=== Voltage Calculator with Automatic DirectSun/Umbra Time, Direction Check, and Plots ===\n")
 
