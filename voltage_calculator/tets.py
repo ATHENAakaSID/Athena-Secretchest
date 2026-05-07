@@ -84,7 +84,6 @@ def energy_to_voltage(energy, voltages, energies):
     v_sorted = voltages[order]
     return np.interp(energy, e_sorted, v_sorted)
 
-
 def force_voltage_direction(start_voltage, raw_end_voltage, direction):
     """
     Force the voltage movement to match the physical power direction.
